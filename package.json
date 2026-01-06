@@ -1,0 +1,31 @@
+{
+  "name": "krong-labs",
+  "version": "1.0.0",
+  "description": "나의 실험실",
+  "main": "index.js",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:vanilla": "npm run dev --workspace vanilla-vite",
+    "dev:react": "npm run dev --workspace react-embed",
+    "dev:astro": "npm run dev --workspace astro-web",
+    "dev:next": "npm run dev --workspace next-web",
+    "build": "npm run build --workspaces",
+    "lint": "npm run lint --workspaces",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/seongmin36/krong-labs.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/seongmin36/krong-labs/issues"
+  },
+  "homepage": "https://github.com/seongmin36/krong-labs#readme"
+}
