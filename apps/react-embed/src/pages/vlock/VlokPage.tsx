@@ -153,7 +153,7 @@ const VlockPage = () => {
           </div>
         </div>
       </div>
-      <DragOverlay>
+      <DragOverlay dropAnimation={null}>
         {active?.kind === "library" ? (
           <div className="w-[260px] rounded-xl border bg-white p-3 shadow-xl">
             <div className="text-sm font-semibold">{active.item.title}</div>

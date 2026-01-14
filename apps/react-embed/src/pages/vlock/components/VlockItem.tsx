@@ -20,10 +20,12 @@ const VlockItem = ({ item }: VlockItemProps) => {
       {...attributes}
       className={clsx(
         "w-full h-10 bg-gray-200 p-2 cursor-pointer",
-        isDragging && "opacity-50"
+        isDragging && "opacity-0"
       )}
       style={{
-        transform: transform
+        transform: isDragging
+          ? undefined
+          : transform
           ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
           : undefined,
       }}
