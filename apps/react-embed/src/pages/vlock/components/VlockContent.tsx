@@ -2,13 +2,23 @@ import { useDroppable } from "@dnd-kit/core";
 import type { BoardItem } from "../types/type";
 import clsx from "clsx";
 import VlockCanvasBlock from "./VlockCanvasBlock";
+import SnapPreview from "./SnapPreview";
+
+type SnapPreviewState = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  visible: boolean;
+} | null;
 
 type Props = {
   items: BoardItem[];
   boardRef: React.RefObject<HTMLDivElement>;
+  snapPreview?: SnapPreviewState;
 };
 
-const VlockContent = ({ items, boardRef }: Props) => {
+const VlockContent = ({ items, boardRef, snapPreview }: Props) => {
   const { setNodeRef, isOver } = useDroppable({ id: "vlock-board" });
 
   const setRefs = (el: HTMLDivElement | null) => {
@@ -35,6 +45,16 @@ const VlockContent = ({ items, boardRef }: Props) => {
               <VlockCanvasBlock key={it.id} item={it} />
             ))}
           </>
+        )}
+
+        {/* 스냅 프리뷰 - 도킹될 위치 미리보기 */}
+        {snapPreview?.visible && (
+          <SnapPreview
+            x={snapPreview.x}
+            y={snapPreview.y}
+            w={snapPreview.w}
+            h={snapPreview.h}
+          />
         )}
       </div>
     </div>

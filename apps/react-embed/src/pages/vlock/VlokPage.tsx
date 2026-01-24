@@ -4,6 +4,7 @@ import {
   useSensors,
   type DragStartEvent,
   type DragEndEvent,
+  type DragMoveEvent,
   DndContext,
   DragOverlay,
 } from "@dnd-kit/core";
@@ -12,8 +13,22 @@ import VlockContent from "./components/VlockContent";
 import { useMemo, useRef, useState, type RefObject } from "react";
 import { MOCK_LIBRARY } from "./mock";
 import type { BoardItem, LibraryItem } from "./types/type";
+import { CATEGORY_COLORS } from "./types/type";
+import { snapToNearestBlock } from "./utils/snap";
 
-type ActiveDrag = { kind: "library"; item: LibraryItem } | null;
+type ActiveDrag =
+  | { kind: "library"; item: LibraryItem }
+  | { kind: "board"; blockId: string; w: number; h: number }
+  | null;
+
+// 스냅 프리뷰 상태
+type SnapPreviewState = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  visible: boolean;
+} | null;
 
 // 값을 특정 범위 내에 제한하는 함수
 const clamp = (n: number, min: number, max: number) =>
@@ -42,17 +57,78 @@ const VlockPage = () => {
 
   const [active, setActive] = useState<ActiveDrag>(null);
   const [boardItems, setBoardItems] = useState<BoardItem[]>([]);
+  const [snapPreview, setSnapPreview] = useState<SnapPreviewState>(null);
 
   const onDragStart = (e: DragStartEvent) => {
     const kind = e.active.data.current?.kind as string | undefined;
-    if (kind !== "library") return;
 
-    const item = e.active.data.current?.item as LibraryItem | undefined;
-    if (item) setActive({ kind: "library", item });
+    if (kind === "library") {
+      const item = e.active.data.current?.item as LibraryItem | undefined;
+      if (item) setActive({ kind: "library", item });
+    }
+
+    if (kind === "board") {
+      const blockId = e.active.data.current?.blockId as string;
+      const w = e.active.data.current?.w as number;
+      const h = e.active.data.current?.h as number;
+      setActive({ kind: "board", blockId, w, h });
+    }
+  };
+
+  const onDragMove = (e: DragMoveEvent) => {
+    const kind = e.active.data.current?.kind as string | undefined;
+    const boardEl = boardRef.current;
+    if (!boardEl) return;
+
+    const boardRect = boardEl.getBoundingClientRect();
+
+    // 보드 블록 드래그 중일 때만 스냅 프리뷰 계산
+    if (kind === "board") {
+      const blockId = e.active.data.current?.blockId as string;
+      const startX = e.active.data.current?.startX as number;
+      const startY = e.active.data.current?.startY as number;
+      const w = e.active.data.current?.w as number;
+      const h = e.active.data.current?.h as number;
+
+      if (!blockId || startX == null || startY == null || !w || !h) return;
+
+      // 현재 드래그 중인 위치
+      const currentX = clamp(
+        startX + e.delta.x,
+        0,
+        Math.max(0, boardRect.width - w)
+      );
+      const currentY = clamp(
+        startY + e.delta.y,
+        0,
+        Math.max(0, boardRect.height - h)
+      );
+
+      // 스냅 계산
+      const snapResult = snapToNearestBlock(
+        { x: currentX, y: currentY, w, h },
+        boardItems,
+        blockId
+      );
+
+      // 스냅이 발생했을 때만 프리뷰 표시
+      if (snapResult.snappedTo) {
+        setSnapPreview({
+          x: snapResult.x,
+          y: snapResult.y,
+          w,
+          h,
+          visible: true,
+        });
+      } else {
+        setSnapPreview(null);
+      }
+    }
   };
 
   const onDragEnd = (e: DragEndEvent) => {
     setActive(null);
+    setSnapPreview(null); // 스냅 프리뷰 초기화
 
     if (!e.over) return;
 
@@ -81,16 +157,24 @@ const VlockPage = () => {
         ? activeRect.top - boardRect.top + activeRect.height / 2
         : 0;
 
-      const x = clamp(
+      let x = clamp(
         centerX - DEFAULT_BLOCK.w / 2,
         0,
         Math.max(0, boardRect.width - DEFAULT_BLOCK.w)
       );
-      const y = clamp(
+      let y = clamp(
         centerY - DEFAULT_BLOCK.h / 2,
         0,
         Math.max(0, boardRect.height - DEFAULT_BLOCK.h)
       );
+
+      // 새 블록도 스냅 적용
+      const snapResult = snapToNearestBlock(
+        { x, y, w: DEFAULT_BLOCK.w, h: DEFAULT_BLOCK.h },
+        boardItems
+      );
+      x = snapResult.x;
+      y = snapResult.y;
 
       setBoardItems((prev) => [
         ...prev,
@@ -116,9 +200,18 @@ const VlockPage = () => {
 
       if (!blockId || startX == null || startY == null || !w || !h) return;
 
-      // 보드 블록 이동 시 좌표 제한 : 보드 영역 내부에서만 이동 => 보드 영역 좌표 참조
-      const x = clamp(startX + e.delta.x, 0, Math.max(0, boardRect.width - w));
-      const y = clamp(startY + e.delta.y, 0, Math.max(0, boardRect.height - h));
+      // 보드 블록 이동 시 좌표 제한
+      let x = clamp(startX + e.delta.x, 0, Math.max(0, boardRect.width - w));
+      let y = clamp(startY + e.delta.y, 0, Math.max(0, boardRect.height - h));
+
+      // 스냅 적용 - 다른 블록 근처면 '착' 달라붙음
+      const snapResult = snapToNearestBlock(
+        { x, y, w, h },
+        boardItems,
+        blockId
+      );
+      x = snapResult.x;
+      y = snapResult.y;
 
       setBoardItems((prev) =>
         prev.map((b) => (b.id === blockId ? { ...b, x, y } : b))
@@ -130,34 +223,46 @@ const VlockPage = () => {
     <DndContext
       sensors={sensors}
       onDragStart={onDragStart}
+      onDragMove={onDragMove}
       onDragEnd={onDragEnd}
     >
-      <div className="w-full min-h-screen p-10">
-        <div className="">
-          <div className="flex gap-10">
-            <div className="flex flex-col w-1/4">
-              <p>사이드바</p>
-              <section className="h-screen border border-gray-300">
-                <VlockSidebar items={MOCK_LIBRARY} />
-              </section>
-            </div>
-            <div className="flex flex-col w-3/4">
-              <p>컨텐츠 영역</p>
-              <section className="h-screen border border-gray-300">
-                <VlockContent
-                  items={boardItems}
-                  boardRef={boardRef as RefObject<HTMLDivElement>}
-                />
-              </section>
-            </div>
-          </div>
-        </div>
+      <div className="w-full h-screen flex">
+        <aside className="w-[302px] h-full shrink-0">
+          <VlockSidebar items={MOCK_LIBRARY} />
+        </aside>
+
+        {/* 컨텐츠 영역 */}
+        <main className="flex-1 h-full bg-gray-50 p-6">
+          <VlockContent
+            items={boardItems}
+            boardRef={boardRef as RefObject<HTMLDivElement>}
+            snapPreview={snapPreview}
+          />
+        </main>
       </div>
       <DragOverlay dropAnimation={null}>
         {active?.kind === "library" ? (
-          <div className="w-[260px] rounded-xl border bg-white p-3 shadow-xl">
-            <div className="text-sm font-semibold">{active.item.title}</div>
-            <div className="text-xs text-gray-500">드롭하면 보드에 추가</div>
+          <div className="w-[248px] h-[84px] rounded-[10px] border border-gray-200 bg-white flex items-center gap-3 p-3 shadow-xl">
+            {/* 이미지 영역 */}
+            <div className="w-16 h-16 rounded-[10px] bg-gray-200 shrink-0 flex items-center justify-center">
+            </div>
+            {/* 텍스트 정보 */}
+            <div className="flex flex-col gap-1">
+              <span
+                className="text-xs font-medium"
+                style={{ color: CATEGORY_COLORS[active.item.category] }}
+              >
+                {active.item.category}
+              </span>
+              <span className="text-[15px] font-semibold text-[#222222]">
+                {active.item.title}
+              </span>
+              <div className="flex items-center gap-1">
+                <span className="text-xs font-medium text-gray-400">
+                  {active.item.duration}
+                </span>
+              </div>
+            </div>
           </div>
         ) : null}
       </DragOverlay>
